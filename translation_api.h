@@ -3,6 +3,14 @@
 
 #include <Arduino.h>
 
+
+//#include private_settings.h
+static constexpr char* my_ssid = "BurgerOfTheDay";
+static constexpr char* my_password = "ElsiesChoice";
+static constexpr char* H_RAPID_API_KEY_VALUE =    "ItsInYourKitchenDrawer";
+
+
+
 class TranslationAPI {
   public:
   
@@ -22,7 +30,7 @@ class TranslationAPI {
   static constexpr char* H_RAPID_API_HOST_LABEL =   "x-rapidapi-host";
   static constexpr char* H_RAPID_API_HOST_VALUE =   "microsoft-translator-text.p.rapidapi.com";
   static constexpr char* H_RAPID_API_KEY_LABEL =    "X-RapidAPI-Key";
-  static constexpr char* H_RAPID_API_KEY_VALUE =    "boogawooga";
+
   static constexpr char* H_CONTENT_TYPE_LABEL =     "content-type";
   static constexpr char* H_CONTENT_TYPE_VALUE =     "application/json";
   static constexpr char* SOURCE_LANGUAGE =          "en";
@@ -32,8 +40,7 @@ class TranslationAPI {
   static constexpr char* BODY_JSON_SECTION =        "translations";
   static constexpr char* BODY_JSON__FIELD =         "text";
 
-  static constexpr char* my_ssid = "badguys";
-  static constexpr char* my_password = "come4u";
+
 
 
   static String getSubmitJSON(String srcString); 

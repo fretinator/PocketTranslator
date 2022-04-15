@@ -38,12 +38,9 @@
 
 // Homescreen related
 #define BACK_COLOR ILI9341_WHITE
-#define SRC_SECTION_LABEL "ENTER ENGLISH PHRASE"
+#define SRC_SECTION_LABEL "Text to translate:"
 #define TRANS_SECTION_LABEL "TRANSLATION"
-#define BTN1_LABEL "Tra"
-#define BTN2_LABEL "Rst"
-#define BTN3_LABEL "Sav"
-#define BTN4_LABEL "Lod"
+#define BTN4_LABEL "Mod"
 #define FONT_SIZE 2
 #define CHAR_WIDTH 10
 #define CHAR_HEIGHT 16
@@ -64,6 +61,16 @@ struct pixel_pos {
   int x;
   int y;
 } currentCharPos;
+
+enum OP_MODE {
+  OP_ONLINE,
+  OP_OFFLINE,
+};
+
+OP_MODE my_op_mode = OP_ONLINE;
+
+const char* btn_labels[8] = {"Tra","Rst","Sav","Mod",
+  "Prv","Nxt","Fil","Mod"};
 
 int currentCharacter = 0;
 
@@ -95,7 +102,12 @@ char fName[MAX_FILENAME];
 #define MAX_SRC_STRING 100
 #define MAX_LINES 4 
 const uint CHARS_PER_LINE = MAX_SRC_STRING / MAX_LINES;
+
+// Source is a char array so we can implement a 
+// simple text editor
 char srcString[MAX_SRC_STRING + 1]; // one for null character
+String strTranslation;
+
 //TSC2004 ts;
 Adafruit_ILI9341 tft(TFT_CS, TFT_DC);
 Adafruit_NeoPixel pixels(1, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
@@ -111,6 +123,13 @@ SdFile root;
 
 // Use for file creation in folders.
 SdFile entry;
+#define MAX_LINE_LEN 255
+char fBuffer[MAX_LINE_LEN + 1]; // room for \0
+// Pause before showing translation in offline mode
+const int  tr_delay = 3 * 1000; 
+// Used to get the previous word
+int prev_line_pos = 0;
+#define SAVED_TRANSLATIONS_FILE "00_saved.txt"
 
 void initSourceString() {
   
@@ -157,6 +176,9 @@ void initScreen() {
   tft.setTextSize(2);
 }
 void drawButtonLabels() {
+  // Which set of button button labels to display
+  int labelSet = (OP_ONLINE == my_op_mode ? 0 : 4);
+  
   uint btnY = SCREEN_HEIGHT - (2 * BORDER_PAD) - CHAR_HEIGHT;
   uint btnX = BORDER_PAD; // For first button;
   uint btnW = (3 * CHAR_WIDTH) + (4 * CHAR_PAD);
@@ -164,13 +186,27 @@ void drawButtonLabels() {
 
   tft.fillRect(btnX, btnY, btnW, btnY, RECT_COLOR);
   tft.setCursor(btnX + CHAR_PAD, btnY + CHAR_PAD);
-  tft.print(BTN1_LABEL);
+  tft.print(btn_labels[0 + labelSet]);
 
   btnX += 2 * btnW; 
 
   tft.fillRect(btnX, btnY, btnW, btnY, RECT_COLOR);
   tft.setCursor(btnX + CHAR_PAD, btnY + CHAR_PAD);
-  tft.print(BTN2_LABEL);  
+  tft.print(btn_labels[1 + labelSet]); 
+  
+  // Now start from the right side,
+  // subtract pad and width of button
+  btnX = SCREEN_WIDTH  - BORDER_PAD - btnW;
+
+  tft.fillRect(btnX, btnY, btnW, btnY, RECT_COLOR);
+  tft.setCursor(btnX + CHAR_PAD, btnY + CHAR_PAD);
+  tft.print(btn_labels[3 + labelSet]);
+
+  btnX -= 2 * btnW; 
+
+  tft.fillRect(btnX, btnY, btnW, btnY, RECT_COLOR);
+  tft.setCursor(btnX + CHAR_PAD, btnY + CHAR_PAD);
+  tft.print(btn_labels[2 + labelSet]);   
 }
 
 void drawHomeScreen() {
@@ -179,7 +215,20 @@ void drawHomeScreen() {
   tft.fillScreen(BACK_COLOR);
 
   tft.setCursor(BORDER_PAD, BORDER_PAD);
-  tft.print("Text to translate:");
+  
+  if(OP_ONLINE == my_op_mode || !sdOK) {
+    tft.print(SRC_SECTION_LABEL);
+  } else {
+    
+    entry.getName(fName, MAX_FILENAME);
+
+    if(strncmp(fName, "00_", 3) == 0) {
+      tft.print("Saved Phrases:");
+    } else {
+      tft.print(fName);
+    }
+  }
+
 
   // Draw a rectangle around the source input aread 
   // Top of rectangle is bottom of above row of text
@@ -239,24 +288,18 @@ void setup()
   //tft.print("Hello FeatherWing!\n");
   //tft.print("Touch to paint, type to... type\n");
 
-  // List SD card files if available
-  //pinMode(33, OUTPUT);
-  //digitalWrite(33, HIGH);
-
-  pinMode(SD_CS, OUTPUT);
-  digitalWrite(SD_CS, HIGH);
-
-
-  Serial.println("Opening SD Card...");
-  if(!sd.begin(SD_CS)) {
+  // Try slower speed for non-hardware CS pin
+  Serial.println("Open SD Card  ");
+  if(!sd.begin(SD_CS, SD_SCK_MHZ(25))) {
     Serial.println("SD not available.");
     sdOK = false;
   } else {
     Serial.println("Attempting to open SD root filesystem...");
     if(!root.open("/")) {
       Serial.println("Error opening root filesystem.");
+      sdOK = false;
     } else {
-      
+      sdOK = true;
       Serial.println("Listing files on SD card...");
       //tft.print("SD Card contents:\n");
 
@@ -285,6 +328,23 @@ void handleKey(char key) {
   }
 }
 
+void clearTranslationArea() {
+   // Should be where translation text prints
+   tft.drawRect(BORDER_PAD, translationPosY, 
+   SCREEN_WIDTH - BORDER_PAD,
+    SCREEN_HEIGHT - (2 * BORDER_PAD) - CHAR_HEIGHT - LINE_PAD, 
+    BACK_COLOR);
+}
+
+void printTranslation(String translation, bool clearArea) {
+    if(clearArea) {
+      clearTranslationArea();
+    }
+    
+    tft.setCursor(BORDER_PAD, translationPosY);
+    tft.print(translation);
+}
+
 void submitTranslation() {
   String substr = String(srcString);
   substr.trim();
@@ -293,9 +353,8 @@ void submitTranslation() {
   Serial.println(substr);
 
   if(substr.length() > 0) {
-    String result = TranslationAPI::getTranslation(substr);
-    tft.setCursor(BORDER_PAD, translationPosY);
-    tft.print(result);
+    strTranslation = TranslationAPI::getTranslation(substr);
+    printTranslation(strTranslation, true);
   }
 }
 
@@ -307,30 +366,220 @@ void handleReset() {
 
 
 void handleSave() {
+  String line = "";
+  Serial.println("Attempting to save.");
+  delay(500);
 
+  pixels.show();
+
+  changeSourceCaption("Saving...");
+  Serial.print("Source string: ");
+  Serial.println(srcString);
+
+  Serial.print("Translation string: ");
+  Serial.println(strTranslation);
+  if(strlen(srcString) > 0 && strTranslation.length() > 0) { 
+    line = srcString;
+    line += "\t";
+    line += strTranslation;
+
+    if(!writeLine(line)) {
+      changeSourceCaption("Saving failed.");
+    } else {
+      changeSourceCaption("Saving completed.");
+    }
+  } else {
+    changeSourceCaption("Blank phrases not saved");
+  }
+
+  delay(1000);
+
+  changeSourceCaption(SRC_SECTION_LABEL);
+  handleReset();
 }
 
 
-void handleLoad() {
+void handleModeSwitch() {
+  if(OP_ONLINE == my_op_mode && sdOK) {
+    my_op_mode = OP_OFFLINE;
+    entry.close();
 
+    root.rewind();
+    // Need to open first file on card and display first word
+    entry.openNext(&root, O_RDONLY);
+    handleReset();
+    handleNextWord();
+  } else {
+    my_op_mode = OP_ONLINE;
+    handleReset();
+  }
+}
+
+// Offline methods
+
+void handlePrevWord() {
+  // We are no implementing a previous
+  // file function
+  if(0 != prev_line_pos) {
+    entry.seekCur(prev_line_pos);
+    handleNextWord();
+  }
+}
+
+
+void handleNextFile() {
+  entry.close();
+  
+  if(!entry.openNext(&root, O_RDONLY)) {
+    root.rewind();
+    entry.openNext(&root, O_RDONLY);
+  }
+  handleNextWord();
+}
+
+String readLine() {
+  int charsRead = 0;
+  prev_line_pos = entry.curPosition();
+
+  while(!isLineTerminator(entry.peek())
+  && charsRead <= MAX_LINE_LEN && entry.available()) {
+     fBuffer[charsRead] = entry.read();
+     charsRead++; // Yes could be done in one line
+  }
+
+  fBuffer[charsRead] = '\0';
+
+  // Now remove line terminator(s)
+  while(entry.available() && isLineTerminator(entry.peek())) {
+    entry.read(); // discard
+    Serial.println("Discarded terminator");
+  }
+  
+  return String(fBuffer);
+}
+
+bool writeLine(String line) {
+  
+  root.rewind();
+  
+  if(!entry.openNext(&root, O_WRITE | O_APPEND | O_AT_END)) {
+    Serial.println("Saving is not implemented");
+    return false;
+  }
+
+  entry.getName(fName, MAX_FILENAME);
+  Serial.print("File to write: ");
+  Serial.println(fName);
+  Serial.print("Line to write: ");
+  Serial.println(line);
+
+  entry.seekCur(EOF);
+  int peekVal = entry.peek();
+
+  // Make sure we are either we are at beginning 
+  // of file or previous line had line terminator
+  if(!isLineTerminator(peekVal) && peekVal != -1) {
+    entry.write('\n');
+  }
+
+  for(int x = 0; x < line.length();x++) {
+    entry.write(line[x]);
+  }
+  entry.write('\n');
+  entry.flush();
+
+  entry.close();
+
+  return true;
+}
+
+void changeSourceCaption(String caption) {
+  tft.setCursor(BORDER_PAD, BORDER_PAD);
+  tft.fillRect(BORDER_PAD, BORDER_PAD, SCREEN_WIDTH - 2 * BORDER_PAD, CHAR_HEIGHT,
+    BACK_COLOR);
+  tft.print(caption);  
+}
+
+
+bool isLineTerminator(char c) {
+  return '\r' == c || '\n' == c;
+}
+
+void handleNextWord() {
+  String srcLanguage;
+  String destLanguage;
+
+
+  String curLine = readLine();
+  curLine.trim();
+
+  if(curLine.length() == 0) {
+    return handleNextFile();
+  }
+
+  int splitPos = curLine.indexOf('\t');
+
+  if(splitPos <= 0) {
+    // Source word at least 1 letter
+    // Assume bad file or end of file
+    // and move on
+    return handleNextFile();
+  }
+
+  srcLanguage = curLine.substring(0, splitPos);
+  destLanguage = curLine.substring(splitPos + 1);
+
+  if(destLanguage.length() == 0) {
+    // Maybe the next word is OK?
+    return handleNextWord();
+  }
+
+  strTranslation = destLanguage;
+
+  initSourceString();
+  strncpy(srcString, srcLanguage.c_str(), MAX_SRC_STRING);
+  srcString[MAX_SRC_STRING] = '\0';
+ 
+  drawHomeScreen();
+  
+  setSourceCharPos(0);
+  tft.setCursor(currentCharPos.x, currentCharPos.y);
+  tft.print(srcString);
+
+  delay(tr_delay);
+
+  printTranslation(strTranslation, false);
 }
 
 void handleButtonPress(uint btnVal) {
   switch(btnVal) {
     case KEY_B1:
-      submitTranslation();
+      if(OP_ONLINE == my_op_mode) {
+        submitTranslation();
+      } else {
+        handlePrevWord();
+      }
 
       break;
     case KEY_B2:
-      handleReset();
+      if(OP_ONLINE == my_op_mode) {
+        handleReset();
+      } else {
+        
+        handleNextWord();
+      }
 
       break;
     case KEY_B3:
-      handleSave();
+      if(OP_ONLINE == my_op_mode) {
+        handleSave();
+      } else {
+        handleNextFile();
+      }
 
       break;
     case KEY_B4:
-      handleLoad();
+      handleModeSwitch();
 
       break;
     default:
