@@ -8,7 +8,7 @@
 #ifdef RELEASE_MODE
  #include "private_settings.h"
 #else
-  #define H_RAPID_API_KEY_VALUE  "ItsInYourKitchenDrawer";
+  #define H_RAPID_API_KEY_VALUE  "ItsInYourKitchenDrawer"
 #endif
 
 class TranslationAPI {
