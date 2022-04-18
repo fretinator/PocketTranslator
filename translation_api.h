@@ -3,29 +3,32 @@
 
 #include <Arduino.h>
 
+#undef RELEASE_MODE
 
-//#include private_settings.h
-static constexpr char* my_ssid = "BurgerOfTheDay";
-static constexpr char* my_password = "ElsiesChoice";
-static constexpr char* H_RAPID_API_KEY_VALUE =    "ItsInYourKitchenDrawer";
-
-
+#ifdef RELEASE_MODE
+ #include "private_settings.h"
+#else
+  #define H_RAPID_API_KEY_VALUE  "ItsInYourKitchenDrawer";
+#endif
 
 class TranslationAPI {
   public:
-  
+
+
 
   //static const char* getx_client_trace_id_value();
-  static String getTranslation(String srcString);
+  static String getTranslation(String srcString, String fromLang, 
+    String toLang);
 
   // Includes information for the translaction API
   static constexpr char* API_SUBMIT_TYPE = "POST";
 
 
 
+
   // HEADERS
   static constexpr char*  H_API_BEGIN_URL =
-   "https://microsoft-translator-text.p.rapidapi.com/translate?to=fil&api-version=3.0&from=en&profanityAction=NoAction&textType=plain";
+   "https://microsoft-translator-text.p.rapidapi.com/translate?api-version=3.0&profanityAction=NoAction&textType=plain";
   static constexpr char* X_CLIENT_TRACE_ID_LABEL =  "X-ClientTraceId";
   static constexpr char* H_RAPID_API_HOST_LABEL =   "x-rapidapi-host";
   static constexpr char* H_RAPID_API_HOST_VALUE =   "microsoft-translator-text.p.rapidapi.com";

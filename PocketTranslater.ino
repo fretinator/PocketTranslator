@@ -1,5 +1,15 @@
 //#include <TSC2004.h>
 
+
+#undef RELEASE_MODE
+
+#ifdef RELEASE_MODE
+#include "secrets.h"
+#else
+  static constexpr char* my_ssid = "honeypot2";
+  static constexpr char* my_password = "1234";
+#endif
+
 #include <BlockDriver.h>
 #include <FreeStack.h>
 #include <MinimumSerial.h>
@@ -38,9 +48,6 @@
 
 // Homescreen related
 #define BACK_COLOR ILI9341_WHITE
-#define SRC_SECTION_LABEL "Text to translate:"
-#define TRANS_SECTION_LABEL "TRANSLATION"
-#define BTN4_LABEL "Mod"
 #define FONT_SIZE 2
 #define CHAR_WIDTH 10
 #define CHAR_HEIGHT 16
@@ -67,7 +74,20 @@ enum OP_MODE {
   OP_OFFLINE,
 };
 
+enum LANG_MODE {
+  SRC_FIRST,
+  DEST_FIRST,
+};
+
 OP_MODE my_op_mode = OP_ONLINE;
+LANG_MODE my_lang_mode = SRC_FIRST;
+
+static const String srcLang = "en";
+static const String destLang = "fil";
+#define SRC_LANG_CAPTION "Text to Translate:"
+#define DEST_LANG_CAPTION "Teksto upang isalin:"
+#define SRC_LANG_TRANS_LABEL "TRANSLATION"
+#define DEST_LANG_TRANS_LABEL "PAGSASALIN"
 
 const char* btn_labels[8] = {"Tra","Rst","Sav","Mod",
   "Prv","Nxt","Fil","Mod"};
@@ -131,6 +151,7 @@ const int  tr_delay = 3 * 1000;
 int prev_line_pos = 0;
 #define SAVED_TRANSLATIONS_FILE "00_saved.txt"
 
+
 void initSourceString() {
   
   // Initialize source string
@@ -143,11 +164,11 @@ void initSourceString() {
 }
 
 bool connectToWiFi() {
-  WiFi.begin(TranslationAPI::my_ssid, TranslationAPI::my_password);
+  WiFi.begin(my_ssid, my_password);
   uint attempts = 0;
 
   tft.print("Connecting to ");
-  tft.print(TranslationAPI::my_ssid);
+  tft.print(my_ssid);
 
   while (WiFi.status() != WL_CONNECTED && attempts < 20) {
       delay(500);
@@ -217,7 +238,8 @@ void drawHomeScreen() {
   tft.setCursor(BORDER_PAD, BORDER_PAD);
   
   if(OP_ONLINE == my_op_mode || !sdOK) {
-    tft.print(SRC_SECTION_LABEL);
+    tft.print((SRC_FIRST == my_lang_mode) ? SRC_LANG_CAPTION :
+      DEST_LANG_CAPTION);
   } else {
     
     entry.getName(fName, MAX_FILENAME);
@@ -353,7 +375,14 @@ void submitTranslation() {
   Serial.println(substr);
 
   if(substr.length() > 0) {
-    strTranslation = TranslationAPI::getTranslation(substr);
+    if(SRC_FIRST == my_lang_mode) {
+      strTranslation = TranslationAPI::getTranslation(substr,
+        srcLang, destLang);
+    } else {
+      strTranslation = TranslationAPI::getTranslation(substr,
+      destLang, srcLang);
+    }
+    
     printTranslation(strTranslation, true);
   }
 }
@@ -379,9 +408,16 @@ void handleSave() {
   Serial.print("Translation string: ");
   Serial.println(strTranslation);
   if(strlen(srcString) > 0 && strTranslation.length() > 0) { 
-    line = srcString;
-    line += "\t";
-    line += strTranslation;
+    // For consistency, always write source language first
+    if(SRC_FIRST == my_lang_mode) {
+      line = srcString;
+      line += "\t";
+      line += strTranslation;
+    } else {
+      line = strTranslation;
+      line += "\t";
+      line += srcString;
+    }
 
     if(!writeLine(line)) {
       changeSourceCaption("Saving failed.");
@@ -394,24 +430,44 @@ void handleSave() {
 
   delay(1000);
 
-  changeSourceCaption(SRC_SECTION_LABEL);
+  changeSourceCaption((SRC_FIRST == my_lang_mode) ? SRC_LANG_CAPTION : DEST_LANG_CAPTION);
   handleReset();
 }
 
-
+/*
+  Now support 4 modes:
+    1. ONLINE   - SOURCE  LANGUAGE FIRST
+    2. ONLINE   - DEST    LANGUAGE FIRST
+    3. OFFLINE  - SOURCE  LANGUAGE FIRST
+    4. OFFLINE  - DEST    LANGUAGE FIRST
+*/
 void handleModeSwitch() {
-  if(OP_ONLINE == my_op_mode && sdOK) {
-    my_op_mode = OP_OFFLINE;
-    entry.close();
+  if(OP_ONLINE == my_op_mode) {
+    if(SRC_FIRST == my_lang_mode) {
+      my_lang_mode = DEST_FIRST;
+      handleReset();
+    } else {
+      my_op_mode = OP_OFFLINE;
+      my_lang_mode = SRC_FIRST;
+      entry.close();
 
-    root.rewind();
-    // Need to open first file on card and display first word
-    entry.openNext(&root, O_RDONLY);
-    handleReset();
-    handleNextWord();
+      root.rewind();
+      // Need to open first file on card and display first word
+      entry.openNext(&root, O_RDONLY);
+      handleReset();
+      // Don't NEED to return,
+      // but just in case more code is added
+      return handleNextWord();
+    }
   } else {
-    my_op_mode = OP_ONLINE;
-    handleReset();
+    if(SRC_FIRST == my_lang_mode) {
+          my_lang_mode = DEST_FIRST;
+          return handleNextWord();
+      } else {    
+        my_op_mode = OP_ONLINE;
+        my_lang_mode = SRC_FIRST;
+        return handleReset();
+      }
   }
 }
 
@@ -505,13 +561,26 @@ bool isLineTerminator(char c) {
   return '\r' == c || '\n' == c;
 }
 
+// When coming from a file and you
+// have already populate the source string
+void displaySourceString() {
+  for(int x = 0; x < MAX_SRC_STRING && srcString[x] != '\0'; x++) {
+    setSourceCharPos(x);
+    tft.setCursor(currentCharPos.x, currentCharPos.y);
+    tft.print(srcString[x]);
+  }
+}
+
 void handleNextWord() {
-  String srcLanguage;
-  String destLanguage;
+  String srcLangString;
+  String destLangString;
 
 
   String curLine = readLine();
+
   curLine.trim();
+  Serial.print("Current line: ");
+  Serial.println(curLine);
 
   if(curLine.length() == 0) {
     return handleNextFile();
@@ -526,25 +595,37 @@ void handleNextWord() {
     return handleNextFile();
   }
 
-  srcLanguage = curLine.substring(0, splitPos);
-  destLanguage = curLine.substring(splitPos + 1);
+  srcLangString = curLine.substring(0, splitPos);
+  destLangString = curLine.substring(splitPos + 1);
 
-  if(destLanguage.length() == 0) {
+  if(destLangString.length() == 0) {
     // Maybe the next word is OK?
     return handleNextWord();
   }
 
-  strTranslation = destLanguage;
-
   initSourceString();
-  strncpy(srcString, srcLanguage.c_str(), MAX_SRC_STRING);
-  srcString[MAX_SRC_STRING] = '\0';
+
+  Serial.print("Language mode, 0 = Source First, 1 = Dest First: ");
+  Serial.println(my_lang_mode);
+
+  if(SRC_FIRST == my_lang_mode) {
+    strTranslation = destLangString;
+
+
+    strncpy(srcString, srcLangString.c_str(), MAX_SRC_STRING);
+    srcString[MAX_SRC_STRING] = '\0';
+  }  else {
+    strTranslation = srcLangString;
+
+    strncpy(srcString , destLangString.c_str(), MAX_SRC_STRING);
+    srcString[MAX_SRC_STRING] = '\0';    
+  }
+
+  
  
   drawHomeScreen();
   
-  setSourceCharPos(0);
-  tft.setCursor(currentCharPos.x, currentCharPos.y);
-  tft.print(srcString);
+  displaySourceString();
 
   delay(tr_delay);
 

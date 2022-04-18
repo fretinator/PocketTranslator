@@ -20,11 +20,24 @@ static XXH64 xx64;
 static String SRC_JSON_TEMPLATE_BEGIN = "[\r\t\t{\r\t\t\t\"Text\": \"";
 static String SRC_JSON_TEMPLATE_END = "\"\r\t\t}\r]";
 
-String TranslationAPI::getTranslation(String srcString) {
+String TranslationAPI::getTranslation(String srcString, String fromLang, 
+    String toLang) {
   if (WiFi.status() == WL_CONNECTED) {
+      HTTPClient http;
+      
       getGUID();
-      HTTPClient http; //Object of class HTTPClient
-      http.begin(H_API_BEGIN_URL);
+      
+      String begin_url(H_API_BEGIN_URL);
+      begin_url += "&from=" + fromLang + "&to=" + toLang;
+
+        
+      Serial.print("API CALL URL: ");
+      Serial.println(begin_url);
+      
+      Serial.print("RapidAPI KEY: ");
+      Serial.println(H_RAPID_API_KEY_VALUE);
+
+      http.begin(begin_url);
       http.addHeader(H_RAPID_API_HOST_LABEL, H_RAPID_API_HOST_VALUE);
       http.addHeader(H_RAPID_API_KEY_LABEL, H_RAPID_API_KEY_VALUE);
       http.addHeader(H_CONTENT_TYPE_LABEL, H_CONTENT_TYPE_VALUE);
