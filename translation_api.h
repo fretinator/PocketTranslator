@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 
-#undef RELEASE_MODE
+#define RELEASE_MODE
 
 #ifdef RELEASE_MODE
  #include "private_settings.h"

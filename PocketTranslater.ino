@@ -1,7 +1,7 @@
 //#include <TSC2004.h>
 
 
-#undef RELEASE_MODE
+#define RELEASE_MODE
 
 #ifdef RELEASE_MODE
 #include "secrets.h"
@@ -31,6 +31,9 @@
 #include <HTTPClient.h>
 #include <esp_system.h>
 
+// For sorted file list
+#include "sorted_file_list.h"
+
 //#define STMPE_CS 32 //6
 #define TFT_CS 15 //9
 #define TFT_DC 33 //10
@@ -48,7 +51,8 @@
 
 // Homescreen related
 #define BACK_COLOR ILI9341_WHITE
-#define FONT_SIZE 2
+#define MAIN_FONT_SIZE 2
+#define BTN_FONT_SIZE 1
 #define CHAR_WIDTH 10
 #define CHAR_HEIGHT 16
 #define LINE_PAD 4
@@ -89,8 +93,8 @@ static const String destLang = "fil";
 #define SRC_LANG_TRANS_LABEL "TRANSLATION"
 #define DEST_LANG_TRANS_LABEL "PAGSASALIN"
 
-const char* btn_labels[8] = {"Tra","Rst","Sav","Mod",
-  "Prv","Nxt","Fil","Mod"};
+const char* btn_labels[8] = {"Tran","Rset","Save","Mode",
+  "Prev","Next","File","Mode"};
 
 int currentCharacter = 0;
 
@@ -150,7 +154,7 @@ const int  tr_delay = 3 * 1000;
 // Used to get the previous word
 int prev_line_pos = 0;
 #define SAVED_TRANSLATIONS_FILE "00_saved.txt"
-
+SortedFileList fileList;
 
 void initSourceString() {
   
@@ -194,9 +198,11 @@ void initScreen() {
   tft.setRotation(1);
   tft.fillScreen(BACK_COLOR);
   tft.setTextColor(SRC_TEXT_COLOR);  
-  tft.setTextSize(2);
+  tft.setTextSize(MAIN_FONT_SIZE);
 }
 void drawButtonLabels() {
+  tft.setTextSize(BTN_FONT_SIZE);
+  
   // Which set of button button labels to display
   int labelSet = (OP_ONLINE == my_op_mode ? 0 : 4);
   
@@ -206,13 +212,13 @@ void drawButtonLabels() {
   uint btnH = CHAR_HEIGHT + (2 * CHAR_PAD);
 
   tft.fillRect(btnX, btnY, btnW, btnY, RECT_COLOR);
-  tft.setCursor(btnX + CHAR_PAD, btnY + CHAR_PAD);
+  tft.setCursor(btnX + 3 * CHAR_PAD, btnY +  4 * CHAR_PAD);
   tft.print(btn_labels[0 + labelSet]);
 
   btnX += 2 * btnW; 
 
   tft.fillRect(btnX, btnY, btnW, btnY, RECT_COLOR);
-  tft.setCursor(btnX + CHAR_PAD, btnY + CHAR_PAD);
+  tft.setCursor(btnX + 3 * CHAR_PAD, btnY + 4 * CHAR_PAD);
   tft.print(btn_labels[1 + labelSet]); 
   
   // Now start from the right side,
@@ -220,14 +226,16 @@ void drawButtonLabels() {
   btnX = SCREEN_WIDTH  - BORDER_PAD - btnW;
 
   tft.fillRect(btnX, btnY, btnW, btnY, RECT_COLOR);
-  tft.setCursor(btnX + CHAR_PAD, btnY + CHAR_PAD);
+  tft.setCursor(btnX + 3* CHAR_PAD, btnY + 4 * CHAR_PAD);
   tft.print(btn_labels[3 + labelSet]);
 
   btnX -= 2 * btnW; 
 
   tft.fillRect(btnX, btnY, btnW, btnY, RECT_COLOR);
-  tft.setCursor(btnX + CHAR_PAD, btnY + CHAR_PAD);
+  tft.setCursor(btnX + 3 * CHAR_PAD, btnY + 4 * CHAR_PAD);
   tft.print(btn_labels[2 + labelSet]);   
+
+  tft.setTextSize(MAIN_FONT_SIZE);
 }
 
 void drawHomeScreen() {
@@ -329,10 +337,12 @@ void setup()
       while (entry.openNext(&root, O_RDONLY)) {
         entry.getName(fName, MAX_FILENAME);
         Serial.print("\t");
-        Serial.println(fName);    
+        Serial.println(fName); 
+        fileList.add(fName);   
         //tft.println(fName);
         entry.close();
       }
+      fileList.dump(Serial);
     }
   }
 
@@ -451,9 +461,10 @@ void handleModeSwitch() {
       my_lang_mode = SRC_FIRST;
       entry.close();
 
-      root.rewind();
+      //root.rewind();
       // Need to open first file on card and display first word
-      entry.openNext(&root, O_RDONLY);
+      fileList.rewind();
+      entry.open(fileList.next(), O_RDONLY);
       handleReset();
       // Don't NEED to return,
       // but just in case more code is added
@@ -486,10 +497,12 @@ void handlePrevWord() {
 void handleNextFile() {
   entry.close();
   
+  /*
   if(!entry.openNext(&root, O_RDONLY)) {
     root.rewind();
     entry.openNext(&root, O_RDONLY);
-  }
+  }*/
+  entry.open(fileList.next(), O_RDONLY);
   handleNextWord();
 }
 
@@ -516,9 +529,7 @@ String readLine() {
 
 bool writeLine(String line) {
   
-  root.rewind();
-  
-  if(!entry.openNext(&root, O_WRITE | O_APPEND | O_AT_END)) {
+  if(!entry.open(SAVED_TRANSLATIONS_FILE, O_WRITE | O_APPEND | O_AT_END)) {
     Serial.println("Saving is not implemented");
     return false;
   }
