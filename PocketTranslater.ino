@@ -149,12 +149,43 @@ SdFile root;
 SdFile entry;
 #define MAX_LINE_LEN 255
 char fBuffer[MAX_LINE_LEN + 1]; // room for \0
+
 // Pause before showing translation in offline mode
 const int  tr_delay = 3 * 1000; 
+
 // Used to get the previous word
-int prev_line_pos = 0;
+// Single-linked list stack
+struct WordOffset {
+  int offset;
+  WordOffset* prevWord;
+};
+
+WordOffset* wordStackTop = NULL;
+
 #define SAVED_TRANSLATIONS_FILE "00_saved.txt"
 SortedFileList fileList;
+
+int addCurrentWordOffset(int offset) {
+  WordOffset* newWordOffset = new WordOffset();
+  
+  newWordOffset->offset = offset;
+  newWordOffset->prevWord = wordStackTop;
+  
+  wordStackTop = newWordOffset;
+}
+
+void deleteWordOffsetStack() {
+  WordOffset* tmp = wordStackTop;
+
+  while(tmp != NULL) {
+    WordOffset* del = tmp;
+    tmp = tmp->prevWord;
+
+    delete del;
+  }
+
+  wordStackTop = NULL;
+}
 
 void initSourceString() {
   
@@ -167,12 +198,18 @@ void initSourceString() {
   srcString[MAX_SRC_STRING] = '\0';
 }
 
-bool connectToWiFi() {
-  WiFi.begin(my_ssid, my_password);
-  uint attempts = 0;
+bool connectToWiFi(bool backup) {
+  
+  if(backup) {
+    WiFi.begin(backup_ssid, backup_password);
+  } else {
+    WiFi.begin(my_ssid, my_password);
+  }
 
+  uint attempts = 0;
+  Serial.println(WiFi.macAddress());
   tft.print("Connecting to ");
-  tft.print(my_ssid);
+  tft.print(backup ? backup_ssid : my_ssid);
 
   while (WiFi.status() != WL_CONNECTED && attempts < 20) {
       delay(500);
@@ -183,7 +220,7 @@ bool connectToWiFi() {
   if(WiFi.status() != WL_CONNECTED) {
     tft.print(" Connection failed!");
     return false;
-  }
+  } 
 
  tft.println("\nWiFi connected! ");
  tft.print("IP address: ");
@@ -306,19 +343,7 @@ void setup()
 
   initScreen();
 
-  if(!connectToWiFi()) {
-    // No use going on
-    while(1);
-  }
-
-  esp_random();
-
-  drawHomeScreen();
-
-  //tft.print("Hello FeatherWing!\n");
-  //tft.print("Touch to paint, type to... type\n");
-
-  // Try slower speed for non-hardware CS pin
+ // Try slower speed for non-hardware CS pin
   Serial.println("Open SD Card  ");
   if(!sd.begin(SD_CS, SD_SCK_MHZ(25))) {
     Serial.println("SD not available.");
@@ -345,9 +370,33 @@ void setup()
       fileList.dump(Serial);
     }
   }
+  esp_random();
+
+  if(!connectToWiFi(false)) {
+    if(!connectToWiFi(true)) {
+      if(sdOK) {
+        my_op_mode = OP_OFFLINE;
+        fileList.rewind();
+        entry.open(fileList.next(), O_RDONLY);
+        handleReset();
+        return handleNextWord();
+      } else {
+        tft.println("WiFi and SD card failed, program aborting.");
+        while(1);
+      }
+    }
+  }
 
 
-  Serial.println("Initialization complete.");
+
+  drawHomeScreen();
+
+  //tft.print("Hello FeatherWing!\n");
+  //tft.print("Touch to paint, type to... type\n");
+
+ 
+
+
 }
 
 void handleKey(char key) {
@@ -476,27 +525,40 @@ void handleModeSwitch() {
           return handleNextWord();
       } else {    
         my_op_mode = OP_ONLINE;
+        deleteWordOffsetStack();
         my_lang_mode = SRC_FIRST;
         return handleReset();
       }
   }
 }
 
-// Offline methods
 
+
+/* 
+** To get to the beginning of the previous word,
+** we have to pop 1 offset from the WordOffset Stack, but
+** go two offset back in the file
+**  1. The 1st offset is to get to the beginning of current word.
+**  2. The 2nd offset is to get to the beginning of previous word. 
+*/
 void handlePrevWord() {
-  // We are no implementing a previous
-  // file function
-  if(0 != prev_line_pos) {
-    entry.seekCur(prev_line_pos);
+  // Not that we do not implement previous file function if at top
+  if(wordStackTop != NULL && wordStackTop->prevWord != NULL) {
+    WordOffset* temp = wordStackTop->prevWord;
+    int totalOffset = wordStackTop->offset;
+    delete wordStackTop;
+
+    wordStackTop = temp;
+    totalOffset += wordStackTop->offset; // Was previous word offset
+
+    entry.seekCur(totalOffset);
     handleNextWord();
   }
 }
 
-
 void handleNextFile() {
   entry.close();
-  
+  deleteWordOffsetStack();
   /*
   if(!entry.openNext(&root, O_RDONLY)) {
     root.rewind();
@@ -508,7 +570,7 @@ void handleNextFile() {
 
 String readLine() {
   int charsRead = 0;
-  prev_line_pos = entry.curPosition();
+  int start_pos = entry.curPosition();
 
   while(!isLineTerminator(entry.peek())
   && charsRead <= MAX_LINE_LEN && entry.available()) {
@@ -524,6 +586,8 @@ String readLine() {
     Serial.println("Discarded terminator");
   }
   
+  // We want a negative offset for handlePrevWord()
+  addCurrentWordOffset(start_pos - entry.curPosition()); 
   return String(fBuffer);
 }
 
