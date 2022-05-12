@@ -1,3 +1,5 @@
+#include <UrlEncode.h>
+
 #include "translation_api.h"
 
 #include <XXH64.h>
@@ -28,8 +30,9 @@ String TranslationAPI::getTranslation(String srcString, String fromLang,
       getGUID();
       
       String begin_url(H_API_BEGIN_URL);
+#ifndef RELEASE_MODE
       begin_url += "&from=" + fromLang + "&to=" + toLang;
-
+#endif
         
       Serial.print("API CALL URL: ");
       Serial.println(begin_url);
@@ -41,9 +44,17 @@ String TranslationAPI::getTranslation(String srcString, String fromLang,
       http.addHeader(H_RAPID_API_HOST_LABEL, H_RAPID_API_HOST_VALUE);
       http.addHeader(H_RAPID_API_KEY_LABEL, H_RAPID_API_KEY_VALUE);
       http.addHeader(H_CONTENT_TYPE_LABEL, H_CONTENT_TYPE_VALUE);
+#ifndef RELEASE_MODE      
       http.addHeader(X_CLIENT_TRACE_ID_LABEL, strGUID);
-      
-      int httpCode = http.POST(getSubmitJSON(srcString));
+//#else
+//      http.addHeader(H_ACCEPT_ENCODING, H_ACCEPT_ENCODING_VALUE);
+#endif
+
+      String postVal = getSubmission(srcString, fromLang, toLang);
+      Serial.print("Translation POST Value is: ");
+      Serial.println(postVal);
+
+      int httpCode = http.POST(postVal);
       
       Serial.println(httpCode);
       
@@ -86,13 +97,21 @@ void TranslationAPI::getGUID() {
 }
 
 
-String TranslationAPI::getSubmitJSON(String srcString) {
+String TranslationAPI::getSubmission(String srcString, String fromLang, String toLang) {
+#ifndef RELEASE_MODE  
   return SRC_JSON_TEMPLATE_BEGIN + srcString + SRC_JSON_TEMPLATE_END;
- }
+#else
+  return "q=" + urlEncode(srcString) + "&format=text&target=" + toLang + "&source=" + fromLang;
+#endif
+}
 
 String TranslationAPI::parseJSON(String json) {
   String ret;
   DynamicJsonDocument doc(JSON_CAPACITY);
+  
+  Serial.print("JSON returned from WebService: ");
+  Serial.print(json);
+  
   // Extract values
   DeserializationError error = deserializeJson(doc, json);
 
@@ -104,7 +123,7 @@ String TranslationAPI::parseJSON(String json) {
 
   } else {
     // Get transated text
-    ret = doc[0]["translations"][0]["text"].as<String>();
+    ret = doc["data"]["translations"][0]["translatedText"].as<String>();
     Serial.print("Translation: ");
     Serial.println(ret);
   }

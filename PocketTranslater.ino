@@ -87,7 +87,7 @@ OP_MODE my_op_mode = OP_ONLINE;
 LANG_MODE my_lang_mode = SRC_FIRST;
 
 static const String srcLang = "en";
-static const String destLang = "fil";
+static const String destLang = "tl";
 #define SRC_LANG_CAPTION "Text to Translate:"
 #define DEST_LANG_CAPTION "Teksto upang isalin:"
 #define SRC_LANG_TRANS_LABEL "TRANSLATION"
