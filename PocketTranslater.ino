@@ -62,6 +62,7 @@
 #define CURSOR_COLOR ILI9341_GREEN
 
 int translationPosY;
+uint btnY;
 
 struct pixel_pos {
   int x;
@@ -238,7 +239,7 @@ void drawButtonLabels() {
   // Which set of button button labels to display
   int labelSet = (OP_ONLINE == my_op_mode ? 0 : 4);
   
-  uint btnY = SCREEN_HEIGHT - (2 * BORDER_PAD) - CHAR_HEIGHT;
+  btnY = SCREEN_HEIGHT - (2 * BORDER_PAD) - CHAR_HEIGHT;
   uint btnX = BORDER_PAD; // For first button;
   uint btnW = (3 * CHAR_WIDTH) + (4 * CHAR_PAD);
   uint btnH = CHAR_HEIGHT + (2 * CHAR_PAD);
@@ -408,7 +409,7 @@ void clearTranslationArea() {
    // Should be where translation text prints
    tft.fillRect(BORDER_PAD, translationPosY, 
    SCREEN_WIDTH - BORDER_PAD,
-    SCREEN_HEIGHT - (2 * BORDER_PAD) - CHAR_HEIGHT - LINE_PAD, 
+    btnY - translationPosY, 
     BACK_COLOR);
 }
 
