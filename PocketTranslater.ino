@@ -10,14 +10,9 @@
   static constexpr char* my_password = "1234";
 #endif
 
-#include <BlockDriver.h>
-#include <FreeStack.h>
-#include <MinimumSerial.h>
+
 #include <SdFat.h>
 #include <SdFatConfig.h>
-#include <SysCall.h>
-#include <sdios.h>
-
 #include <Adafruit_GFX.h>
 #include <SPI.h>
 #include <Wire.h>
@@ -411,7 +406,7 @@ void handleKey(char key) {
 
 void clearTranslationArea() {
    // Should be where translation text prints
-   tft.drawRect(BORDER_PAD, translationPosY, 
+   tft.fillRect(BORDER_PAD, translationPosY, 
    SCREEN_WIDTH - BORDER_PAD,
     SCREEN_HEIGHT - (2 * BORDER_PAD) - CHAR_HEIGHT - LINE_PAD, 
     BACK_COLOR);
