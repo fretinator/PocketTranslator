@@ -65,9 +65,9 @@ int translationPosY;
 uint btnY;
 
 struct pixel_pos {
-  int x;
-  int y;
-} currentCharPos;
+  int16_t x;
+  int16_t y;
+};
 
 enum OP_MODE {
   OP_ONLINE,
@@ -92,23 +92,23 @@ static const String destLang = "tl";
 const char* btn_labels[8] = {"Tran","Rset","Save","Mode",
   "Prev","Next","File","Mode"};
 
-int currentCharacter = 0;
+short currentCharacter = 0;
 
 const int FIRST_LINE_Y = BORDER_PAD + CHAR_HEIGHT + 2 * LINE_PAD;
 const int FIRST_CHAR_X = 3 * BORDER_PAD;
 
 // CONTROL CHARACTER VALUES
-#define KEY_BS     8
-#define KEY_B1     6
-#define KEY_B2    17
-#define KEY_B3     7
-#define KEY_B4    18
-#define KEY_LEFT   3
-#define KEY_UP     1
-#define KEY_RIGHT  4
-#define KEY_DOWN   2
-#define KEY_JPRESS 5
-#define KEY_ENTER 10
+const uint KEY_BS    =  8;
+const uint KEY_B1    =  6;
+const uint KEY_B2    =  17;
+const uint KEY_B3    =  7;
+const uint KEY_B4    =  18;
+const uint KEY_LEFT  =  3;
+const uint KEY_UP    =  1;
+const uint KEY_RIGHT =  4;
+const uint KEY_DOWN  =  2;
+const uint KEY_JPRESS = 5;
+const uint KEY_ENTER =  10;
 
 #define CONTROL_KEYS_HANDLED 11
 uint controlCharVals[CONTROL_KEYS_HANDLED] = {KEY_BS, KEY_B1, KEY_B2, KEY_B3,
@@ -271,7 +271,7 @@ void drawButtonLabels() {
   tft.setTextSize(MAIN_FONT_SIZE);
 }
 
-void drawHomeScreen() {
+void drawHomeScreen(bool firstTime) {
 
   // Clear screen
   tft.fillScreen(BACK_COLOR);
@@ -283,6 +283,7 @@ void drawHomeScreen() {
       DEST_LANG_CAPTION);
   } else {
     
+    Serial.println("Retieving file name...");
     entry.getName(fName, MAX_FILENAME);
 
     if(strncmp(fName, "00_", 3) == 0) {
@@ -290,12 +291,14 @@ void drawHomeScreen() {
     } else {
       tft.print(fName);
     }
+
   }
 
 
   // Draw a rectangle around the source input aread 
   // Top of rectangle is bottom of above row of text
   // plus line_pad
+  Serial.println("Drawing source rect...");
   int rectTop = tft.getCursorY() + CHAR_HEIGHT + LINE_PAD;
   int rectHeight = MAX_LINES * CHAR_HEIGHT + (MAX_LINES + 2) * LINE_PAD;
   int rectWidth = SCREEN_WIDTH - (2 * BORDER_PAD);
@@ -303,8 +306,12 @@ void drawHomeScreen() {
 
   translationPosY = rectTop + rectHeight + 2 * LINE_PAD;
 
+  Serial.println("Drawing button labels...");
   drawButtonLabels();
-  moveCursor(0);
+
+  Serial.println("Setting cursor...");
+  moveCursor(0, firstTime);
+  Serial.println("Completed drawing screen.");
 }
 
 void setup()
@@ -316,18 +323,6 @@ void setup()
   Wire.begin();
 
   initSourceString();
-
-  /*
-    Serial.println("Starting touch...");
-  
-  pinMode(STMPE_CS, OUTPUT);
-
-
-  if(!ts.begin()) {
-    Serial.println("Touch not available.");
-    touchAvailable= false;
-  }
-  */
 
   Serial.println("Starting NeoPixel...");
   pixels.begin();
@@ -363,9 +358,11 @@ void setup()
         //tft.println(fName);
         entry.close();
       }
-      fileList.dump(Serial);
+      //fileList.dump(Serial);
     }
   }
+
+  Serial.println("Starting esp_random...");
   esp_random();
 
   if(!connectToWiFi(false)) {
@@ -373,6 +370,7 @@ void setup()
       if(sdOK) {
         my_op_mode = OP_OFFLINE;
         fileList.rewind();
+        Serial.print("Opening first file...");
         entry.open(fileList.next(), O_RDONLY);
         handleReset();
         return handleNextWord();
@@ -383,22 +381,18 @@ void setup()
     }
   }
 
-
-
-  drawHomeScreen();
-
-  //tft.print("Hello FeatherWing!\n");
-  //tft.print("Touch to paint, type to... type\n");
-
- 
-
-
+  Serial.println("Drawing screen...");
+  drawHomeScreen(true);
 }
 
 void handleKey(char key) {
   uint keyVal = (uint)key;
 
+  Serial.print("Handlink keypress, integer value of key is ");
+  Serial.println(keyVal);
+
   if(isControlValue(keyVal)) {
+    Serial.println("Handling control character.");
     handleControlValue(keyVal);
   } else {
     handleCharacter(key);
@@ -445,7 +439,7 @@ void submitTranslation() {
 void handleReset() {
   currentCharacter = 0;
   initSourceString();
-  drawHomeScreen();
+  drawHomeScreen(false);
 }
 
 
@@ -613,7 +607,7 @@ bool writeLine(String line) {
     entry.write(line[x]);
   }
   entry.write('\n');
-  entry.flush();
+  //entry.f;
 
   entry.close();
 
@@ -635,9 +629,10 @@ bool isLineTerminator(char c) {
 // When coming from a file and you
 // have already populate the source string
 void displaySourceString() {
-  for(int x = 0; x < MAX_SRC_STRING && srcString[x] != '\0'; x++) {
-    setSourceCharPos(x);
-    tft.setCursor(currentCharPos.x, currentCharPos.y);
+  for(short x = 0; x < MAX_SRC_STRING && srcString[x] != '\0'; x++) {
+    pixel_pos pos;
+    getSourceCharPos(x, pos);
+    tft.setCursor(pos.x, pos.y);
     tft.print(srcString[x]);
   }
 }
@@ -694,7 +689,7 @@ void handleNextWord() {
 
   
  
-  drawHomeScreen();
+  drawHomeScreen(false);
   
   displaySourceString();
 
@@ -741,34 +736,35 @@ void handleButtonPress(uint btnVal) {
   }
 }
 
+void changeCharacter(short newPos) {
+    moveCursor(newPos, false);
+    currentCharacter = newPos;
+}
+
 // Include enter key and Joystick Enter
 void handleArrowPress(uint arrowVal) {
   switch(arrowVal) {
     case KEY_LEFT:
       if(currentCharacter > 0) {
-        currentCharacter--;
-        moveCursor(currentCharacter);
+        changeCharacter(currentCharacter - 1);
       }
       
       break;
 
     case KEY_UP:
       if(currentCharacter >= CHARS_PER_LINE) {
-        currentCharacter -= CHARS_PER_LINE;
-        moveCursor(currentCharacter);
+        changeCharacter(currentCharacter - CHARS_PER_LINE);
       }
       break;
     case KEY_DOWN:
       if(currentCharacter < (MAX_SRC_STRING - CHARS_PER_LINE)) {
-        currentCharacter += CHARS_PER_LINE;
-        moveCursor(currentCharacter);
+        changeCharacter(currentCharacter + CHARS_PER_LINE);
       }
       break;
 
     case KEY_RIGHT:
       if(currentCharacter < MAX_SRC_STRING) {
-         currentCharacter++;
-         moveCursor(currentCharacter);
+         changeCharacter(currentCharacter + 1);
       }
       break;
   }
@@ -776,18 +772,18 @@ void handleArrowPress(uint arrowVal) {
  
 // Returns topLeft position of where to set cursor to draw character in
 // source string
-void setSourceCharPos(uint charNum) {
+void getSourceCharPos(short charNum, pixel_pos& pos) {
   if(charNum <= MAX_SRC_STRING) {
     int rowNum = charNum / CHARS_PER_LINE; 
     int charPos = charNum % CHARS_PER_LINE;
 
-    currentCharPos.x = FIRST_CHAR_X + (charPos * (CHAR_WIDTH + CHAR_PAD));
-    currentCharPos.y = FIRST_LINE_Y + (rowNum * (CHAR_HEIGHT + LINE_PAD));
+    pos.x = FIRST_CHAR_X + (charPos * (CHAR_WIDTH + CHAR_PAD));
+    pos.y = FIRST_LINE_Y + (rowNum * (CHAR_HEIGHT + LINE_PAD));
   }
 }
 
 
-void getCharPos(uint charNum, int& charPosX, int& charPosY) {
+void getCharPos(short charNum, int& charPosX, int& charPosY) {
     int rowNum = charNum / CHARS_PER_LINE; 
     int charPos = charNum % CHARS_PER_LINE;
 
@@ -798,56 +794,67 @@ void getCharPos(uint charNum, int& charPosX, int& charPosY) {
 
 // Draw character from source string at charNum position
 // to matching position on screen
-void drawCharacter(uint charNum) {
+void drawCharacter(short charNum) {
+  pixel_pos pos;
   if(charNum < MAX_SRC_STRING) {
     // Erase previous character
-    setSourceCharPos(charNum);
-    tft.fillRect(currentCharPos.x, currentCharPos.y, CHAR_WIDTH, 
+    getSourceCharPos(charNum, pos);
+    tft.fillRect(pos.x, pos.y, CHAR_WIDTH, 
       CHAR_HEIGHT, BACK_COLOR);
-    tft.setCursor(currentCharPos.x, currentCharPos.y);
+    tft.setCursor(pos.x, pos.y);
     tft.print(srcString[charNum]);
   }
+
 }
 
 // Draw a line under where next character will go
-void setCursorPos(uint characterPos) {
+void drawCursor(short characterPos, int16_t color) {
+  pixel_pos pos;
 
-  setSourceCharPos(characterPos);
+  getSourceCharPos(characterPos, pos);
 
   // Daw line 2 pixels under character
- int startx = currentCharPos.x;
+  int16_t startx = pos.x;
   // Daw line 2 pixels under character
-  int starty = currentCharPos.y + CHAR_HEIGHT + 2; 
+  int16_t starty = pos.y + CHAR_HEIGHT + 2; 
 
-  tft.drawLine(startx, starty, startx + CHAR_WIDTH, starty, CURSOR_COLOR);
+  tft.drawLine(startx, starty, startx + CHAR_WIDTH, starty, color);
 }
 
-void moveCursor(uint newCursorChar) {
-  eraseCurrentCursor();
-  setCursorPos(newCursorChar);
+void moveCursor(short newCursorChar, bool firstTime) {
+  Serial.print("New Cursor character number is ");
+  Serial.println(newCursorChar);
+
+  if(!firstTime) {
+    Serial.print("erasing current cursor at position ");
+    Serial.println(currentCharacter);
+        
+    //eraseCurrentCursor(currentCharacter);
+    drawCursor(currentCharacter, BACK_COLOR);
+  }
+
+  Serial.print("Set cursor position to character number ");
+  Serial.println(newCursorChar);          
+  drawCursor(newCursorChar, CURSOR_COLOR);
 }
 
-boolean eraseCurrentCursor() {
-  int startx = currentCharPos.x;
-  // Daw line 2 pixels under character
-  int starty = currentCharPos.y + CHAR_HEIGHT + 2; 
-
-  tft.drawLine(startx, starty, startx + CHAR_WIDTH, starty, BACK_COLOR);
-}
 
 bool isControlValue(uint charVal) {
-  for(int x = x; x < CONTROL_KEYS_HANDLED; x++) {
+  Serial.println("Checking for control character...");
+  for(int x = 0; x < CONTROL_KEYS_HANDLED; x++) {
     if(controlCharVals[x] == charVal) {
+      Serial.println("Control character found");
       return true;
     }
   }
+
+  Serial.println("No control character found");
   return false;
 }
 
 void doErase() {
   if(currentCharacter > 0) {
-    currentCharacter--;
-    moveCursor(currentCharacter);
+    changeCharacter(currentCharacter - 1);
     srcString[currentCharacter] = ' ';
     drawCharacter(currentCharacter);
     }
@@ -860,8 +867,7 @@ void handleEnterKey() {
         // Move to beginning of next line
         int curRow =  currentCharacter / CHARS_PER_LINE; 
         curRow++;
-        currentCharacter = curRow * CHARS_PER_LINE;
-        moveCursor(currentCharacter);
+        changeCharacter(curRow * CHARS_PER_LINE);
       }  
 }
 
@@ -897,17 +903,23 @@ void handleControlValue(uint charVal) {
 void handleCharacter(char key) {
   Serial.print("Handling character: ");
   Serial.println(key);
+
+  Serial.print("Current character number is ");
+  Serial.println(currentCharacter) ; 
   
   srcString[currentCharacter] = key;
   drawCharacter(currentCharacter);
 
-  currentCharacter++;
+  short newcharPos = currentCharacter + 1;
 
-  if(currentCharacter > MAX_SRC_STRING) {
-    currentCharacter = 0;
+  if(newcharPos > MAX_SRC_STRING) {
+    newcharPos = 0;
   }
 
-  moveCursor(currentCharacter);
+  Serial.print("Moving cursor to character number ");
+  Serial.println(newcharPos);
+
+  changeCharacter(newcharPos);
 }
 
 void loop()
@@ -953,7 +965,8 @@ void loop()
 
     if (k_evt.state == BBQ10Keyboard::StateRelease) {
      // pixels.setPixelColor(0, pixels.Color(0, 255, 0));
-     // pixels.show(); 
+      Serial.print("Key pressed: ");
+      Serial.println(k_evt.key);
     
       handleKey(k_evt.key);
       //tft.print(k_evt.key);      
