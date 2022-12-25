@@ -161,13 +161,19 @@ WordOffset* wordStackTop = NULL;
 #define SAVED_TRANSLATIONS_FILE "00_saved.txt"
 SortedFileList fileList;
 
-int addCurrentWordOffset(int offset) {
+void addCurrentWordOffset(int offset) {
+  Serial.print("Creating new word offset: ");
+  Serial.println(offset);
+
   WordOffset* newWordOffset = new WordOffset();
   
+  Serial.println("Setting new word offset, and prevWord to wordStackTop...");  
   newWordOffset->offset = offset;
   newWordOffset->prevWord = wordStackTop;
   
+  Serial.println("Seeting stack top to our new word...");
   wordStackTop = newWordOffset;
+  Serial.println("Completed adding new word offset.");  
 }
 
 void deleteWordOffsetStack() {
@@ -502,11 +508,15 @@ void handleModeSwitch() {
 
       //root.rewind();
       // Need to open first file on card and display first word
+      Serial.println("Rewinding file list...");      
       fileList.rewind();
+      Serial.println("Opening first file...");
       entry.open(fileList.next(), O_RDONLY);
+      Serial.println("Resetting screen...");
       handleReset();
       // Don't NEED to return,
       // but just in case more code is added
+      Serial.println("Handle next word...");
       return handleNextWord();
     }
   } else {
@@ -560,15 +570,20 @@ void handleNextFile() {
 
 String readLine() {
   int charsRead = 0;
-  int start_pos = entry.curPosition();
+  uint32_t start_pos = entry.curPosition();
 
+  Serial.println("Readline stripping line terminators, then reading characters...");  
   while(!isLineTerminator(entry.peek())
-  && charsRead <= MAX_LINE_LEN && entry.available()) {
-     fBuffer[charsRead] = entry.read();
+  && charsRead < MAX_LINE_LEN && entry.available()) {
+     uint8_t c = entry.read();
+     Serial.print(c);
+     fBuffer[charsRead] = char(c);
      charsRead++; // Yes could be done in one line
   }
 
+  Serial.print("Completed reading line: ");
   fBuffer[charsRead] = '\0';
+  Serial.println(fBuffer);
 
   // Now remove line terminator(s)
   while(entry.available() && isLineTerminator(entry.peek())) {
@@ -576,8 +591,18 @@ String readLine() {
     Serial.println("Discarded terminator");
   }
   
+  Serial.println("Stripped extra line terminators, adding current word offset...");
   // We want a negative offset for handlePrevWord()
-  addCurrentWordOffset(start_pos - entry.curPosition()); 
+  Serial.print("start_pos = ");
+  Serial.println(start_pos);
+
+  uint32_t current_pos = entry.curPosition(); 
+  Serial.print("current_pos = ");
+  Serial.println(current_pos);
+
+  addCurrentWordOffset(start_pos - current_pos); 
+
+  Serial.println("Completed reading next word.");
   return String(fBuffer);
 }
 
@@ -641,7 +666,7 @@ void handleNextWord() {
   String srcLangString;
   String destLangString;
 
-
+  Serial.println("Reading line...");  
   String curLine = readLine();
 
   curLine.trim();

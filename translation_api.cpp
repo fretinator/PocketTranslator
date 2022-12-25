@@ -1,12 +1,12 @@
-#include <UrlEncode.h>
+#include <ArduinoJson.h>
+#include <ArduinoJson.hpp>
+
 
 #include "translation_api.h"
 
-#include <XXH64.h>
-#include <XXH32.h>
 #include <XxHash_arduino.h>
-#include <ArduinoJson.h>
-#include <ArduinoJson.hpp>
+#include <UrlEncode.h>
+
 #include <WiFi.h>
 #include <HTTPClient.h>
 
@@ -16,7 +16,7 @@ static const size_t JSON_CAPACITY = 2048;
 #define GUID_SIZE 32
 static char guidBuffer[17];
 static char strGUID[GUID_SIZE + 1];
-static XXH64 xx64;
+//static Xxh32stream xx32;
 
 // The text to translate goes into the submitJSON buffer between the 2 JSON templates
 static String SRC_JSON_TEMPLATE_BEGIN = "[\r\t\t{\r\t\t\t\"Text\": \"";
@@ -83,10 +83,10 @@ void TranslationAPI::getGUID() {
 
   Serial.println(inputBuff);
 
-  xx64.hash(inputBuff.substring(0,16).c_str(), guidBuffer);
+  xxh32(guidBuffer, inputBuff.substring(0,16).c_str());
   strncpy(strGUID, guidBuffer, 16);
 
-  xx64.hash(inputBuff.substring(16,32).c_str(), guidBuffer);
+  xxh32(guidBuffer, inputBuff.substring(16,32).c_str());
   strncat(strGUID, guidBuffer, 16);
 
   strGUID[GUID_SIZE] = '\0'; // for safety
